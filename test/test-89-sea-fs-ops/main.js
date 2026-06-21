@@ -29,6 +29,7 @@ const expectedOutput =
   'dir-isFile:false\n' +
   'dir-isDir:true\n' +
   'readdir:data.json,index.js,package.json\n' +
+  'readdir-wft:data.json|true|false,index.js|true|false,package.json|true|false\n' +
   'readFile:ok\n' +
   'stat-missing:ENOENT\n' +
   'read-missing:ENOENT\n' +
@@ -36,6 +37,7 @@ const expectedOutput =
   'stat-dir-slash-isDir:true\n' +
   'readdir-dir-slash:data.json,index.js,package.json\n' +
   'accessSync-dir-slash:ok\n' +
+  'readdir-wft-async:data.json,index.js,package.json|allDirent:true\n' +
   'access-promise-dir-slash:ok\n';
 
 utils.assertSeaOutput(testName, expectedOutput);

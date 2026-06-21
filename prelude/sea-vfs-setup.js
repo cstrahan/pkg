@@ -275,6 +275,50 @@ function _makeStats(meta) {
   };
 }
 
+// Lightweight Dirent for readdir(..., { withFileTypes: true }).  The base
+// MemoryProvider's Dirent class is private to that module and its tree is only
+// populated with directories here (not files), so SEAProvider builds its own
+// Dirent-compatible objects straight from the manifest.  Matches the subset of
+// the Node.js fs.Dirent contract that consumers rely on (name; path added in
+// Node 20.1 and parentPath in 21.2; and the is*() predicates).
+//
+// The is*() methods live on the prototype and the type flags are pre-evaluated
+// in the constructor: a single readdir on a large directory would otherwise
+// allocate six closures per entry (60k for a 10k-file dir).  This mirrors how
+// the classic pkg VFS builds Dirents in prelude/bootstrap.js.
+class SEADirent {
+  constructor(name, parentPath, isLink, meta) {
+    this.name = name;
+    this.parentPath = parentPath;
+    this.path = parentPath;
+    this._isFile = !isLink && !!(meta && meta.isFile);
+    this._isDir = !isLink && !!(meta && meta.isDirectory);
+    this._isLink = !!isLink;
+  }
+
+  isFile() {
+    return this._isFile;
+  }
+  isDirectory() {
+    return this._isDir;
+  }
+  isSymbolicLink() {
+    return this._isLink;
+  }
+  isBlockDevice() {
+    return false;
+  }
+  isCharacterDevice() {
+    return false;
+  }
+  isFIFO() {
+    return false;
+  }
+  isSocket() {
+    return false;
+  }
+}
+
 /**
  * SEA asset provider — reads files from a single archive blob embedded in the
  * SEA binary.  All file contents are packed into one asset ('__pkg_archive__')
@@ -475,12 +519,27 @@ class SEAProvider extends MemoryProvider {
     return -2;
   }
 
-  readdirSync(dirPath) {
+  readdirSync(dirPath, options) {
     perf.count('readdirSync calls');
     var p = this._resolveSymlink(toManifestKey(dirPath));
     var entries = this._manifest.directories[p];
-    if (entries) return entries.slice();
-    return super.readdirSync(p);
+    if (!entries) return super.readdirSync(p, options);
+    if (!options || !options.withFileTypes) return entries.slice();
+    // withFileTypes: resolve each child's type from the manifest and return
+    // Dirent-compatible objects (the manifest path bypasses the base tree,
+    // which only holds directories, so build them here).
+    var stats = this._manifest.stats;
+    var symlinks = this._manifest.symlinks;
+    var base = p === '/' ? '' : p;
+    var out = [];
+    for (var i = 0; i < entries.length; i++) {
+      var name = entries[i];
+      var childKey = base + '/' + name;
+      var isLink = symlinks[childKey] !== undefined;
+      var meta = stats[this._resolveSymlink(childKey)];
+      out.push(new SEADirent(name, dirPath, isLink, meta));
+    }
+    return out;
   }
 
   existsSync(filePath) {

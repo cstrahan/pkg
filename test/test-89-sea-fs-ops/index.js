@@ -20,6 +20,19 @@ console.log('dir-isDir:' + dirStat.isDirectory());
 const entries = fs.readdirSync(__dirname).sort();
 console.log('readdir:' + entries.join(','));
 
+// Test readdirSync({ withFileTypes: true }) -> Dirent-compatible objects.
+// The SEA VFS must return objects with working is*() predicates (not bare
+// strings), otherwise consumers doing `e.isFile()` crash.
+const dirents = fs
+  .readdirSync(__dirname, { withFileTypes: true })
+  .sort((a, b) => a.name.localeCompare(b.name));
+console.log(
+  'readdir-wft:' +
+    dirents
+      .map((d) => d.name + '|' + d.isFile() + '|' + d.isDirectory())
+      .join(','),
+);
+
 // Test readFileSync
 const content = fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8');
 const parsed = JSON.parse(content);
@@ -55,8 +68,24 @@ try {
   console.log('accessSync-dir-slash:' + e.code);
 }
 
+// Async readdir must honor withFileTypes too (the async provider method
+// delegates to readdirSync). Chained before the access check so output order
+// is deterministic.
 require('fs/promises')
-  .access(dirSlash)
+  .readdir(__dirname, { withFileTypes: true })
+  .then(function (ds) {
+    const allDirent = ds.every((d) => typeof d.isFile === 'function');
+    console.log(
+      'readdir-wft-async:' +
+        ds
+          .map((d) => d.name)
+          .sort()
+          .join(',') +
+        '|allDirent:' +
+        allDirent,
+    );
+    return require('fs/promises').access(dirSlash);
+  })
   .then(function () {
     console.log('access-promise-dir-slash:ok');
   })
